@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 // ✅ Security Imports
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import mongoSanitize from "mongo-sanitize"; // Updated import
+import mongoSanitize from "mongo-sanitize";
 import xssClean from "xss-clean";
 import hpp from "hpp";
 
@@ -53,7 +53,7 @@ const limiter = rateLimit({
 });
 app.use("/api", limiter);
 
-// 3. Prevent NoSQL Injection (Updated Implementation)
+// 3. Prevent NoSQL Injection
 app.use((req, res, next) => {
   if (req.body) req.body = mongoSanitize(req.body);
   if (req.query) req.query = mongoSanitize(req.query);
@@ -88,7 +88,19 @@ app.use("/api/auth", authRoutes);
 app.use("/api/auctions", auctionRoutes);
 app.use("/api/admin", adminRoutes);
 
-// Health check for Railway/Uptime Monitoring
+/**
+ * ✅ NEW HEALTH CHECK ENDPOINT
+ * Used by Railway for service monitoring
+ */
+app.get("/health", async (req, res) => {
+  res.json({
+    status: "ok",
+    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    timestamp: new Date()
+  });
+});
+
+// Main Landing Check
 app.get("/", (req, res) => {
   res.json({ 
     success: true, 
