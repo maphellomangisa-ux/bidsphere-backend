@@ -3,11 +3,12 @@ import http from "http";
 import { Server } from "socket.io";
 import dotenv from "dotenv";
 import cors from "cors";
+import mongoose from "mongoose";
 
 // ✅ Security Imports
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import mongoSanitize from "express-mongo-sanitize";
+import mongoSanitize from "mongo-sanitize"; // Updated import
 import xssClean from "xss-clean";
 import hpp from "hpp";
 
@@ -28,7 +29,7 @@ const app = express();
 const server = http.createServer(app);
 
 // ==========================================
-// ✅ SOCKET.IO & INJECTION SETUP
+// ✅ SOCKET.IO SETUP
 // ==========================================
 const io = new Server(server, {
   cors: { origin: "*" },
@@ -44,16 +45,21 @@ app.set("io", io);
 // 1. Security Headers
 app.use(helmet());
 
-// 2. Rate Limiting (Global API Limit)
+// 2. Rate Limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // limit each IP to 200 requests per window
+  windowMs: 15 * 60 * 1000, 
+  max: 200, 
   message: "Too many requests from this IP, please try again later."
 });
 app.use("/api", limiter);
 
-// 3. Prevent NoSQL Injection
-app.use(mongoSanitize()); 
+// 3. Prevent NoSQL Injection (Updated Implementation)
+app.use((req, res, next) => {
+  if (req.body) req.body = mongoSanitize(req.body);
+  if (req.query) req.query = mongoSanitize(req.query);
+  if (req.params) req.params = mongoSanitize(req.params);
+  next();
+});
 
 // 4. Prevent XSS
 app.use(xssClean());
@@ -82,9 +88,13 @@ app.use("/api/auth", authRoutes);
 app.use("/api/auctions", auctionRoutes);
 app.use("/api/admin", adminRoutes);
 
-// Health check
+// Health check for Railway/Uptime Monitoring
 app.get("/", (req, res) => {
-  res.json({ success: true, message: "BidSphere API Running 🚀" });
+  res.json({ 
+    success: true, 
+    message: "BidSphere API Running 🚀",
+    timestamp: new Date().toISOString()
+  });
 });
 
 // ==========================================
