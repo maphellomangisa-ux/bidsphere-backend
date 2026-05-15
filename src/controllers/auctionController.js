@@ -2,6 +2,42 @@ import mongoose from "mongoose";
 import Auction from "../models/Auction.js";
 
 // ==========================================
+// ✅ FETCH ALL ACTIVE AUCTIONS
+// ==========================================
+export const getAuctions = async (req, res) => {
+  try {
+    const auctions = await Auction.find({ status: "active" })
+      .populate("seller", "username email")
+      .populate("highestBidder", "username")
+      .sort({ endTime: 1 });
+
+    res.json(auctions);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ==========================================
+// ✅ FETCH SINGLE AUCTION
+// ==========================================
+export const getAuction = async (req, res) => {
+  try {
+    const auction = await Auction.findById(req.params.id)
+      .populate("seller", "username email")
+      .populate("highestBidder", "username")
+      .populate("bids.bidder", "username");
+
+    if (!auction) {
+      return res.status(404).json({ message: "Auction not found" });
+    }
+
+    res.json(auction);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ==========================================
 // ✅ CREATE AUCTION
 // ==========================================
 export const createAuction = async (req, res) => {
@@ -56,8 +92,6 @@ export const placeBid = async (req, res) => {
       return res.status(400).json({ message: "Cannot bid on your own auction" });
     }
 
-    // ✅ Atomic update: Only updates if currentBid is still less than amount
-    // ✅ Simultaneously pushes the new bid into the history array
     const updatedAuction = await Auction.findOneAndUpdate(
       {
         _id: auctionId,
@@ -84,17 +118,14 @@ export const placeBid = async (req, res) => {
       return res.status(400).json({ message: "Bid must be higher than current bid" });
     }
 
-    // 📢 Emit real-time bid update
     io.to(auctionId).emit("newBid", updatedAuction);
 
-    // ⏱️ Anti-sniping logic
     const timeLeft = updatedAuction.endTime - new Date();
 
     if (timeLeft <= 60000) {
       updatedAuction.endTime = new Date(updatedAuction.endTime.getTime() + 60000);
       await updatedAuction.save();
 
-      // 📢 Emit extension event
       io.to(auctionId).emit("auctionExtended", {
         auctionId: updatedAuction._id,
         newEndTime: updatedAuction.endTime,
