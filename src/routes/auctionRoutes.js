@@ -7,15 +7,16 @@ import {
 } from "../controllers/auctionController.js";
 import authMiddleware from "../middleware/auth.js";
 import roleMiddleware from "../middleware/role.js";
-import bidLimiter from "../middleware/bidLimiter.js";
 
 const router = express.Router();
 
 // ✅ Public Routes
+// Accessible by anyone browsing the marketplace
 router.get("/", getAuctions);
 router.get("/:id", getAuction);
 
 // ✅ Protected Routes
+// Only verified sellers can list new items
 router.post(
   "/",
   authMiddleware,
@@ -23,10 +24,10 @@ router.post(
   createAuction
 );
 
+// High-speed bidding (Limiter removed for smooth demo experience)
 router.post(
   "/:id/bid",
   authMiddleware,
-  bidLimiter,
   placeBid
 );
 
