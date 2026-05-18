@@ -38,24 +38,12 @@ export const getAuction = async (req, res) => {
 };
 
 // ==========================================
-// ✅ CREATE AUCTION (Surgically Cleaned for Demo)
+// ✅ CREATE AUCTION
 // ==========================================
 export const createAuction = async (req, res) => {
   try {
-    /* 
-    // -------------------------------------------------------------
-    // 🛡️ DEMO OVERRIDE: Temporarily bypassed to allow open testing.
-    // Production restriction profiles will reactivate these checks.
-    // -------------------------------------------------------------
-    if (req.user.role !== "seller") {
-      return res.status(403).json({ message: "Only sellers can create auctions" });
-    }
-    if (!req.user.isVerifiedSeller) {
-      return res.status(403).json({ message: "Seller not verified" });
-    }
-    */
-
-    const { title, description, startingPrice, reservePrice, durationMinutes } = req.body;
+    const { title, description, startingPrice, reservePrice, durationMinutes } =
+      req.body;
 
     const endTime = new Date(Date.now() + durationMinutes * 60000);
 
@@ -67,6 +55,7 @@ export const createAuction = async (req, res) => {
       reservePrice: reservePrice || 0,
       seller: req.user._id,
       endTime,
+      status: "active",
     });
 
     res.status(201).json(auction);
