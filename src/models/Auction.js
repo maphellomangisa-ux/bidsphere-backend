@@ -23,6 +23,15 @@ const auctionSchema = new mongoose.Schema(
       enum: ["active", "ended", "unsold"],
       default: "active",
     },
+    // ✅ NEW MEDIA & CATEGORY FIELDS
+    imageUrl: {
+      type: String,
+      default: "",
+    },
+    category: {
+      type: String,
+      default: "Other",
+    },
     // ✅ PHASE 2: HYBRID FIELDS
     listingType: {
       type: String,
