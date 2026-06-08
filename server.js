@@ -5,7 +5,7 @@ import dotenv from "dotenv";
 import cors from "cors";
 import mongoose from "mongoose";
 
-// ✅ Security Imports
+// ✅ Security
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import mongoSanitize from "mongo-sanitize";
@@ -17,6 +17,10 @@ import connectDB from "./src/config/db.js";
 import authRoutes from "./src/routes/authRoutes.js";
 import auctionRoutes from "./src/routes/auctionRoutes.js";
 import adminRoutes from "./src/routes/adminRoutes.js";
+import productRoutes from "./src/routes/productRoutes.js";
+import gigRoutes from "./src/routes/gigRoutes.js";
+import messageRoutes from "./src/routes/messageRoutes.js";
+import sellerRoutes from "./src/routes/sellerRoutes.js";
 
 // ✅ Background Services
 import startAuctionCloser from "./src/services/auctionCloser.js";
@@ -25,44 +29,27 @@ import startCountdownBroadcast from "./src/services/countdownService.js";
 
 dotenv.config();
 
+console.log("Running from:", process.cwd());
+console.log("ENV:", process.env.NODE_ENV);
+
 const app = express();
 const server = http.createServer(app);
 
 // ==========================================
-// ✅ DYNAMIC CORS CONFIGURATION
+// ✅ DATABASE CONNECTION
 // ==========================================
-// This allows any origin to connect, which is essential for 
-// Flutter mobile debugging and diverse local web ports.
-const corsOptions = {
-  origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    return callback(null, true);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
-};
-
-app.use(cors(corsOptions));
+connectDB();
 
 // ==========================================
-// ✅ SOCKET.IO SETUP
+// ✅ MIDDLEWARE
 // ==========================================
-const io = new Server(server, {
-  cors: corsOptions, // Use the same dynamic logic for Sockets
-});
 
-app.set("io", io); 
-
-// ==========================================
-// ✅ SECURITY MIDDLEWARE
-// ==========================================
+app.use(express.json());
 app.use(helmet());
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 200, 
-  message: "Too many requests from this IP, please try again later."
+  windowMs: 15 * 60 * 1000,
+  max: 200,
 });
 app.use("/api", limiter);
 
@@ -77,14 +64,23 @@ app.use(xssClean());
 app.use(hpp());
 
 // ==========================================
-// ✅ STANDARD MIDDLEWARE
+// ✅ CORS
 // ==========================================
-app.use(express.json());
+const corsOptions = {
+  origin: true,
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
 // ==========================================
-// ✅ DATABASE & BACKGROUND SERVICES
+// ✅ SOCKET.IO
 // ==========================================
-connectDB();
+const io = new Server(server, {
+  cors: corsOptions,
+});
+app.set("io", io);
+
+// ✅ Start background services
 startAuctionCloser(io);
 registerAuctionSockets(io);
 startCountdownBroadcast(io);
@@ -92,30 +88,77 @@ startCountdownBroadcast(io);
 // ==========================================
 // ✅ ROUTES
 // ==========================================
+
 app.use("/api/auth", authRoutes);
 app.use("/api/auctions", auctionRoutes);
+app.use("/api/products", productRoutes); // ✅ MUST stay plural
+app.use("/api/gigs", gigRoutes);
+app.use("/api/seller", sellerRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api", messageRoutes);
 
-app.get("/health", async (req, res) => {
+// ==========================================
+// ✅ HEALTH CHECK
+// ==========================================
+app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
-    timestamp: new Date()
-  });
-});
-
-app.get("/", (req, res) => {
-  res.json({ 
-    success: true, 
-    message: "BidSphere API Running 🚀",
-    timestamp: new Date().toISOString()
+    db:
+      mongoose.connection.readyState === 1
+        ? "connected"
+        : "disconnected",
+    timestamp: new Date(),
   });
 });
 
 // ==========================================
-// ✅ SERVER START
+// ✅ API ROOT
+// ==========================================
+app.get("/api", (req, res) => {
+  res.json({
+    success: true,
+    message: "BidSphere API Running 🚀",
+  });
+});
+
+// ==========================================
+// ✅ TEST ROUTE
+// ==========================================
+app.get("/api/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Backend API is working",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ==========================================
+// ✅ 404 HANDLER (JSON ONLY)
+// ==========================================
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`,
+  });
+});
+
+// ==========================================
+// ✅ GLOBAL ERROR HANDLER
+// ==========================================
+app.use((err, req, res, next) => {
+  console.error("🔥 SERVER ERROR:", err);
+
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || "Internal Server Error",
+  });
+});
+
+// ==========================================
+// ✅ START SERVER
 // ==========================================
 const PORT = process.env.PORT || 5000;
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

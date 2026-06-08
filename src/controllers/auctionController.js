@@ -22,13 +22,21 @@ export const getAuctions = async (req, res) => {
 // ==========================================
 export const getAuction = async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res
+        .status(400)
+        .json({ message: "Invalid auction ID" });
+    }
+
     const auction = await Auction.findById(req.params.id)
       .populate("seller", "username email isVerifiedSeller")
       .populate("highestBidder", "username")
       .populate("bids.bidder", "username");
 
     if (!auction) {
-      return res.status(404).json({ message: "Auction not found" });
+      return res
+        .status(404)
+        .json({ message: "Auction not found" });
     }
 
     res.json(auction);
@@ -42,10 +50,24 @@ export const getAuction = async (req, res) => {
 // ==========================================
 export const createAuction = async (req, res) => {
   try {
-    const { title, description, startingPrice, reservePrice, durationMinutes } =
-      req.body;
+    const {
+      title,
+      description,
+      startingPrice,
+      reservePrice,
+      durationMinutes,
+    } = req.body;
 
-    const endTime = new Date(Date.now() + durationMinutes * 60000);
+    if (!title || !startingPrice || !durationMinutes) {
+      return res.status(400).json({
+        message:
+          "title, startingPrice and durationMinutes are required",
+      });
+    }
+
+    const endTime = new Date(
+      Date.now() + durationMinutes * 60000
+    );
 
     const auction = await Auction.create({
       title,
@@ -73,69 +95,100 @@ export const placeBid = async (req, res) => {
     const auctionId = req.params.id;
     const io = req.app.get("io");
 
+    // ✅ Validate ID
     if (!mongoose.Types.ObjectId.isValid(auctionId)) {
-      return res.status(400).json({ message: "Invalid auction ID" });
+      return res
+        .status(400)
+        .json({ message: "Invalid auction ID" });
+    }
+
+    // ✅ Validate amount
+    const bidAmount = Number(amount);
+    if (isNaN(bidAmount) || bidAmount <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Invalid bid amount" });
     }
 
     const auction = await Auction.findById(auctionId);
 
     if (!auction || auction.status !== "active") {
-      return res.status(400).json({ message: "Auction is not active" });
+      return res
+        .status(400)
+        .json({ message: "Auction is not active" });
     }
 
-    if (auction.seller.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: "Cannot bid on your own auction" });
+    // ✅ Prevent self-bidding
+    if (
+      auction.seller.toString() ===
+      req.user._id.toString()
+    ) {
+      return res.status(400).json({
+        message: "Cannot bid on your own auction",
+      });
     }
 
+    // ✅ Atomic conditional update (race-condition safe)
     let updatedAuction = await Auction.findOneAndUpdate(
       {
         _id: auctionId,
         status: "active",
-        currentBid: { $lt: amount },
+        currentBid: { $lt: bidAmount },
       },
       {
         $set: {
-          currentBid: amount,
+          currentBid: bidAmount,
           highestBidder: req.user._id,
         },
         $push: {
-          bids: { 
-            bidder: req.user._id, 
-            amount, 
-            timestamp: new Date() 
-          }
-        }
+          bids: {
+            bidder: req.user._id,
+            amount: bidAmount,
+            timestamp: new Date(),
+          },
+        },
       },
       { new: true }
     );
 
     if (!updatedAuction) {
-      return res.status(400).json({ message: "Bid must be higher than current bid" });
+      return res.status(400).json({
+        message: "Bid must be higher than current bid",
+      });
     }
 
-    const timeLeft = updatedAuction.endTime - new Date();
+    // ✅ Anti-sniping extension
+    const timeLeft =
+      updatedAuction.endTime - new Date();
 
     if (timeLeft <= 60000) {
-      updatedAuction.endTime = new Date(updatedAuction.endTime.getTime() + 60000);
+      updatedAuction.endTime = new Date(
+        updatedAuction.endTime.getTime() + 60000
+      );
       await updatedAuction.save();
 
-      io.to(auctionId).emit("countdown", {
+      io?.to(auctionId).emit("countdown", {
         auctionId: updatedAuction._id,
         endTime: updatedAuction.endTime,
       });
 
-      console.log(`⏳ Anti-sniping: Auction ${auctionId} extended.`);
+      console.log(
+        `⏳ Anti-sniping: Auction ${auctionId} extended.`
+      );
     }
 
-    // ✅ FORCE POPULATION BEFORE EMITTING TO PREVENT FLUTTER TYPE CRASHES
-    updatedAuction = await updatedAuction
-      .populate([
-        { path: "seller", select: "username email isVerifiedSeller" },
-        { path: "highestBidder", select: "username" },
-        { path: "bids.bidder", select: "username" }
-      ]);
+    // ✅ Force population to prevent Flutter type crashes
+    updatedAuction = await updatedAuction.populate([
+      {
+        path: "seller",
+        select: "username email isVerifiedSeller",
+      },
+      { path: "highestBidder", select: "username" },
+      { path: "bids.bidder", select: "username" },
+    ]);
 
-    io.to(auctionId).emit("newBid", updatedAuction);
+    // ✅ Emit real-time bid update
+    io?.to(auctionId).emit("newBid", updatedAuction);
 
     res.json(updatedAuction);
   } catch (error) {
